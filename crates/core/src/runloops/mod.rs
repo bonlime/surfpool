@@ -531,7 +531,7 @@ fn start_geyser_runloop(
         let mut indexing_enabled = false;
 
         #[cfg(feature = "geyser_plugin")]
-        let mut plugin_manager = GeyserPluginManager::new();
+        let mut plugin_manager = GeyserPluginManager::default();
         #[cfg(not(feature = "geyser_plugin"))]
         let mut plugin_manager = ();
 

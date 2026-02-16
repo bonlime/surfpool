@@ -116,7 +116,7 @@ solana-epoch-info = { version = "3.1", default-features = false }
 solana-epoch-schedule = { version = "3.0", default-features = false }
 solana-feature-gate-interface = { version = "3.0", default-features = false }
 solana-genesis-config = { version = "3.0", default-features = false }
-# solana-geyser-plugin-manager = { version = "=3.1.6", default-features = false }  # Disabled: version conflicts with litesvm 0.9.1 (requires solana-instruction =3.0.0 vs ~3.1)
+solana-geyser-plugin-manager = { version = "=3.1.6", default-features = false }
 solana-hash = { version = "3.1", default-features = false }
 solana-inflation = { version = "3.0", default-features = false }
 solana-instruction = { version = "3.1", default-features = false }
@@ -178,7 +178,11 @@ txtx-core = { version = "0.4.15" }
 txtx-gql = { version = "0.3.9" }
 txtx-supervisor-ui = { version = "0.2.10", default-features = false }
 
-# [patch.crates-io]
+[patch.crates-io]
+solana-gossip = { path = "third_party/solana-gossip-3.1.6-patched" }
+solana-faucet = { path = "third_party/solana-faucet-3.1.6-patched" }
+
+# Local development overrides
 ## Local
 # txtx-addon-kit = { path = "../txtx/crates/txtx-addon-kit" }
 # txtx-core = { path = "../txtx/crates/txtx-core" }
