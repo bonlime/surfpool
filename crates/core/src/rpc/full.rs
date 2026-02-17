@@ -4,6 +4,7 @@ use itertools::Itertools;
 use jsonrpc_core::{BoxFuture, Error, Result};
 use jsonrpc_derive::rpc;
 use litesvm::types::TransactionMetadata;
+use serde_json::json;
 use solana_account_decoder::UiAccount;
 use solana_client::{
     rpc_config::{
@@ -1634,7 +1635,28 @@ impl Full for SurfpoolFullRpc {
                     code: jsonrpc_core::ErrorCode::ServerError(-32002),
                 });
             }
-            Ok(TransactionStatusEvent::ExecutionFailure(_)) => {}
+            Ok(TransactionStatusEvent::ExecutionFailure((error, metadata))) => {
+                return Err(Error {
+                    data: Some(json!({
+                        "transactionError": error.to_string(),
+                        "logs": metadata.logs,
+                    })),
+                    message: format!(
+                        "Transaction execution failed: {}{}",
+                        error,
+                        if metadata.logs.is_empty() {
+                            String::new()
+                        } else {
+                            format!(
+                                ": {} log messages:\n{}",
+                                metadata.logs.len(),
+                                metadata.logs.iter().map(|l| l.to_string()).join("\n")
+                            )
+                        }
+                    ),
+                    code: jsonrpc_core::ErrorCode::ServerError(-32002),
+                });
+            }
             Ok(TransactionStatusEvent::VerificationFailure(signature)) => {
                 return Err(Error {
                     data: None,
@@ -2860,6 +2882,65 @@ mod tests {
             handle.join().unwrap(),
             tx.signatures[0].to_string(),
             "incorrect signature"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_send_transaction_returns_error_on_execution_failure() {
+        let payer = Keypair::new();
+        let recipient = Pubkey::new_unique();
+        let (mempool_tx, mempool_rx) = crossbeam_channel::unbounded();
+        let setup = TestSetup::new_with_mempool(SurfpoolFullRpc, mempool_tx);
+        let recent_blockhash = setup
+            .context
+            .svm_locker
+            .with_svm_reader(|svm_reader| svm_reader.latest_blockhash());
+
+        let tx = build_v0_transaction(
+            &payer.pubkey(),
+            &[&payer],
+            &[system_instruction::transfer(&payer.pubkey(), &recipient, 1)],
+            &recent_blockhash,
+        );
+        let tx_encoded = bs58::encode(bincode::serialize(&tx).unwrap()).into_string();
+
+        let setup_clone = setup.clone();
+        let handle = hiro_system_kit::thread_named("send_tx_execution_failure")
+            .spawn(move || {
+                setup_clone
+                    .rpc
+                    .send_transaction(Some(setup_clone.context), tx_encoded, None)
+            })
+            .unwrap();
+
+        loop {
+            match mempool_rx.recv() {
+                Ok(SimnetCommand::ProcessTransaction(_, _, status_tx, _, _)) => {
+                    let mut metadata = surfpool_types::TransactionMetadata::default();
+                    metadata.logs = vec!["execution failed".to_string()];
+                    status_tx
+                        .send(TransactionStatusEvent::ExecutionFailure((
+                            TransactionError::InsufficientFundsForFee,
+                            metadata,
+                        )))
+                        .unwrap();
+                    break;
+                }
+                _ => continue,
+            }
+        }
+
+        let result = handle.join().unwrap();
+        assert!(
+            result.is_err(),
+            "send_transaction should fail on execution error"
+        );
+        let err = result.unwrap_err();
+        assert_eq!(err.code, jsonrpc_core::ErrorCode::ServerError(-32002));
+        assert!(
+            err.message.contains("Transaction execution failed"),
+            "Unexpected error message: {}",
+            err.message
         );
     }
 
